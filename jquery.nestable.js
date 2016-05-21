@@ -29,15 +29,17 @@
     var defaults = {
             listNodeName    : 'ol',
             itemNodeName    : 'li',
-            rootClass       : 'dd',
-            listClass       : 'dd-list',
-            itemClass       : 'dd-item',
-            dragClass       : 'dd-dragel',
-            handleClass     : 'dd-handle',
-            collapsedClass  : 'dd-collapsed',
-            placeClass      : 'dd-placeholder',
-            noDragClass     : 'dd-nodrag',
-            emptyClass      : 'dd-empty',
+            rootClass       : 'bp-list',
+            listClass       : 'bp-list-ol',
+            itemClass       : 'bp-list-li',
+            dragClass       : 'bp-list-dragel',
+            handleClass     : 'bp-list-hndl',
+			contentClass    : 'bp-list-content',
+            collapsedClass  : 'collapsed',
+            placeClass      : 'bp-list-proxy',
+            noDragClass     : 'bp-nodrag',
+            emptyClass      : 'bp-list-empty',
+            emptyBtnHTML    : '<button data-action="empty" type="button"> </button>',
             expandBtnHTML   : '<button data-action="expand" type="button">Expand</button>',
             collapseBtnHTML : '<button data-action="collapse" type="button">Collapse</button>',
             group           : 0,
@@ -63,13 +65,13 @@
 
             list.el.data('nestable-group', this.options.group);
 
-            list.placeEl = $('<div class="' + list.options.placeClass + '"/>');
+            list.placeEl = $('<div class="' + list.options.placeClass + ' background-hover "/>');
 
             $.each(this.el.find(list.options.itemNodeName), function(k, el) {
                 list.setParent($(el));
             });
 
-            list.el.on('click', 'button', function(e) {
+            list.el.find('button').on('click', function(e) {
                 if (list.dragEl) {
                     return;
                 }
@@ -83,7 +85,7 @@
                     list.expandItem(item);
                 }
             });
-
+			
             var onStartEvent = function(e)
             {
                 var handle = $(e.target);
@@ -135,7 +137,26 @@
             list.w.on('mouseup', onEndEvent);
 
         },
-
+		
+		rebuildList: function() {
+			var list = this;
+			list.reset();
+            $.each(list.el.find(list.options.itemNodeName), function(k, el) {
+                list.setParent($(el));            
+			});		
+		},
+		
+		didIndent: function(nodeId) {
+			var list = this;
+			var itemSelector = list.options.itemNodeName+"[data-id='"+nodeId+"']";
+            $.each(list.el.find(itemSelector), function(k, indentedEl) {
+				var expandEl = indentedEl.parent();
+                expandEl.prepend($(list.options.expandBtnHTML));
+                expandEl.prepend($(list.options.collapseBtnHTML));
+				list.expandItem(expandEl);
+            });
+		},
+		
         serialize: function()
         {
             var data,
@@ -199,9 +220,9 @@
         expandItem: function(li)
         {
             li.removeClass(this.options.collapsedClass);
-            li.children('[data-action="expand"]').hide();
-            li.children('[data-action="collapse"]').show();
-            li.children(this.options.listNodeName).show();
+            li.children('[data-action="expand"]').hide().removeClass('active');
+            li.children('[data-action="collapse"]').show().addClass('active');
+            li.children(this.options.listNodeName).show().removeClass('active');
         },
 
         collapseItem: function(li)
@@ -209,9 +230,9 @@
             var lists = li.children(this.options.listNodeName);
             if (lists.length) {
                 li.addClass(this.options.collapsedClass);
-                li.children('[data-action="collapse"]').hide();
-                li.children('[data-action="expand"]').show();
-                li.children(this.options.listNodeName).hide();
+                li.children('[data-action="collapse"]').hide().removeClass('active');
+                li.children('[data-action="expand"]').show().addClass('active');
+                li.children(this.options.listNodeName).hide().removeClass('active');
             }
         },
 
@@ -237,7 +258,12 @@
                 li.prepend($(this.options.expandBtnHTML));
                 li.prepend($(this.options.collapseBtnHTML));
             }
+			else {
+                li.prepend($(this.options.emptyBtnHTML));
+	            li.children('[data-action="empty"]').addClass('active');
+			}
             li.children('[data-action="expand"]').hide();
+            li.children('[data-action="collapse"]').addClass('active');
         },
 
         unsetParent: function(li)
@@ -253,7 +279,7 @@
                 target   = $(e.target),
                 dragItem = target.closest(this.options.itemNodeName);
 
-            this.placeEl.css('height', dragItem.height());
+            this.placeEl.css('height', dragItem.outerHeight());
 
             mouse.offsetX = e.offsetX !== undefined ? e.offsetX : e.pageX - target.offset().left;
             mouse.offsetY = e.offsetY !== undefined ? e.offsetY : e.pageY - target.offset().top;
@@ -264,14 +290,17 @@
 
             this.dragEl = $(document.createElement(this.options.listNodeName)).addClass(this.options.listClass + ' ' + this.options.dragClass);
             this.dragEl.css('width', dragItem.width());
-
+			this.dragEl.css('height', dragItem.css('height'));
+			
             dragItem.after(this.placeEl);
             dragItem[0].parentNode.removeChild(dragItem[0]);
             dragItem.appendTo(this.dragEl);
-
+			
             $(document.body).append(this.dragEl);
+			
             this.dragEl.css({
-                'left' : e.pageX - mouse.offsetX,
+				'opacity' : 0.25,
+                'left' : e.pageX - mouse.offsetX - dragItem.width() + 30,
                 'top'  : e.pageY - mouse.offsetY
             });
             // total depth of dragging item
@@ -289,12 +318,20 @@
         {
             var el = this.dragEl.children(this.options.itemNodeName).first();
             el[0].parentNode.removeChild(el[0]);
-            this.placeEl.replaceWith(el);
-
+            
+			this.placeEl.replaceWith(el);
+			
+			var relation  = -1; // move before placeholder sibling
+			var relatedEl = el.next();
+			if (0 == relatedEl.length) {
+				relatedEl = el.prev();
+				relation = 1;
+			}
+			
             this.dragEl.remove();
-            this.el.trigger('change');
+            this.el.trigger('reorder', [el.data('id'), relatedEl.data('id'), relation]);
             if (this.hasNewRoot) {
-                this.dragRootEl.trigger('change');
+                this.dragRootEl.trigger('reorder');
             }
             this.reset();
         },
@@ -306,7 +343,7 @@
                 mouse = this.mouse;
 
             this.dragEl.css({
-                'left' : e.pageX - mouse.offsetX,
+                'left' : e.pageX - mouse.offsetX - this.dragEl.width() + 30,
                 'top'  : e.pageY - mouse.offsetY
             });
 
@@ -354,6 +391,7 @@
             /**
              * move horizontal
              */
+			/*
             if (mouse.dirAx && mouse.distAxX >= opt.threshold) {
                 // reset move distance on x-axis for new phase
                 mouse.distAxX = 0;
@@ -391,7 +429,7 @@
                     }
                 }
             }
-
+			*/
             var isEmpty = false;
 
             // find list item under cursor
@@ -402,7 +440,7 @@
             if (!hasPointerEvents) {
                 this.dragEl[0].style.visibility = 'visible';
             }
-            if (this.pointEl.hasClass(opt.handleClass)) {
+            if (this.pointEl.hasClass(opt.handleClass) || this.pointEl.hasClass(opt.contentClass)) {
                 this.pointEl = this.pointEl.parent(opt.itemNodeName);
             }
             if (this.pointEl.hasClass(opt.emptyClass)) {
@@ -461,6 +499,7 @@
 
     $.fn.nestable = function(params)
     {
+		var args = Array.prototype.slice.call(arguments,1);
         var lists  = this,
             retval = this;
 
@@ -473,7 +512,7 @@
                 $(this).data("nestable-id", new Date().getTime());
             } else {
                 if (typeof params === 'string' && typeof plugin[params] === 'function') {
-                    retval = plugin[params]();
+                    retval = plugin[params].apply(plugin,args);
                 }
             }
         });
